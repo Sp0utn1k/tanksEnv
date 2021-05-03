@@ -1,0 +1,1 @@
+- Fixed number of "aim" actions for the agent. Better for adaptability.
