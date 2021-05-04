@@ -16,4 +16,13 @@ class Args:
 	hidden = [256,128,64]
 	device = "cpu"
 
+	# Graphics
+	add_graphics = True
+	im_size = 720
+	background_color = [133,97,35]
+	red = [255,0,0]
+	blue = [30,144,255]
+	obstacles_color = [88,86,84]
+	fps = 5
+
 args = Args()

@@ -1,17 +1,17 @@
 import numpy as np
 from numpy import random
-import math,time,sys
+import math,time,sys,os
 from collections import namedtuple
 
 import torch
 from torch import nn, optim
+import cv2 as cv
 
 device = "cuda"
 
 class Environment:
 
-	def __init__(self,args,debug=False):
-		self.debug=debug
+	def __init__(self,args):
 		self.N_red = args.N_red
 		self.N_blue = args.N_blue
 		self.obs_size = args.obs_size
@@ -27,6 +27,13 @@ class Environment:
 		self.agents = self.red_agents+self.blue_agents
 		self.all_agents = self.agents
 		self.obstacles = args.obstacles
+		if args.add_graphics:
+			self.graphics = Graphics(args)
+			self.plot = True
+			self.twait = 1000.0/args.fps
+		else:
+			self.graphics = None
+			self.plot = False
 		self.reset()
 
 	def reset(self):
@@ -129,13 +136,13 @@ class Environment:
 		if act == 'shoot':
 			self.fire(agent)
 			target = self.aim[agent]
-			if self.debug:
+			if self.plot:
 				print(f'Agent {agent.id} ({agent.team}) shots at agent {target.id} ({target.team})')
 		if 'aim' in act:
 			target = int(act[3:])
 			self.aim[agent] = self.target_list[agent][target]
 			target = self.aim[agent]
-			if self.debug:
+			if self.plot:
 				print(f'Agent {agent.id} ({agent.team}) aims at agent {target.id} ({target.team})')
 
 	def fire(self,agent):
@@ -152,8 +159,10 @@ class Environment:
 		for agent in self.agents:
 			agent.episode = []
 		while not self.episode_over():
-			if self.debug:
-				print(' ')
+			if self.plot:
+				self.show_image()
+				cv.imshow('image',env.graphics.image)
+				cv.waitKey(round(self.twait))
 			random.shuffle(self.agents)
 			for agent in self.agents:
 				obs = self.observations(agent)
@@ -164,6 +173,7 @@ class Environment:
 				self.red_agents = [agent for agent in self.agents if agent.team=="red"]
 				self.blue_agents = [agent for agent in self.agents if agent.team=="blue"]
 		env.reset()
+		cv.destroyAllWindows()
 		for agent in self.agents:
 			agent.to_batch()
 
@@ -171,6 +181,19 @@ class Environment:
 		if len(self.blue_agents) == 0 or len(self.red_agents) == 0:
 			return True
 		return False
+
+	def show_image(self):
+		if not self.plot:
+			return
+		self.graphics.reset()
+		for agent in self.agents:
+			id = agent.id
+			team = agent.team
+			pos = self.positions[agent]
+			self.graphics.add_agent(id,team,pos)
+		for [x,y] in self.obstacles:
+			self.graphics.set_obstacle(x,y)
+
 
 class Agent:
 	def __init__(self,team,args,id=0):
@@ -214,6 +237,58 @@ class Agent:
 		self.episode = []
 
 
+class Graphics:
+	def __init__(self,args):
+		self.size = args.im_size
+		self.szi = self.size/args.size
+		self.background_color = self.to_color(args.background_color)
+		self.red = self.to_color(args.red)
+		self.blue = self.to_color(args.blue)
+		self.obstacles_color = self.to_color(args.obstacles_color)
+		self.reset()
+
+	def reset(self):
+		self.image = np.full((self.size,self.size,3),self.background_color,dtype=np.uint8)
+
+	def to_color(self,color):
+		(r,g,b) = color
+		color = (b,g,r)
+		return np.array(color,dtype=np.uint8)
+
+	def pixels_in_coord(self,x,y):
+		res = []
+		szi = self.szi
+		for j in range(round(szi*(x)),round(szi*(x+1))):
+			for i in range(round(szi*(y)),round(szi*(y+1))):
+					yield [i,j]
+
+	def assign_value(self,x,y,val):
+		for c in self.pixels_in_coord(x,y):
+			self.image[c[0],c[1],:] = val
+
+	def center(self,x,y):
+		return (round(x*self.szi),round((y+1)*self.szi))
+
+	def set_blue(self,x,y):
+		self.assign_value(x,y,self.blue)
+
+	def set_red(self,x,y):
+		self.assign_value(x,y,self.red)
+
+	def set_obstacle(self,x,y):
+		self.assign_value(x,y,self.obstacles_color)
+
+	def add_agent(self,id,team,pos):
+		[x,y] = pos
+		if team=='red':
+			self.set_red(x,y)
+		elif team=='blue':
+			self.set_blue(x,y)
+		cv.putText(self.image,f'{id}',self.center(x,y),cv.FONT_HERSHEY_SIMPLEX,0.6*self.szi/15,(0,0,0),2)
+
+	def erase_tile(self,x,y):
+		self.assign_value(x,y,self.background_color)
+
 def norm(vect1,vect2):
 	x1,y1 = vect1
 	x2,y2 = vect2
@@ -255,5 +330,4 @@ if __name__ == "__main__":
 
 	from setup import args
 	env = Environment(args)
-
 	env.episode()
